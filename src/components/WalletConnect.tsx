@@ -2,15 +2,11 @@
 
 import { useState, useEffect } from "react";
 import {
-    isConnected,
-    requestAccess,
-    signTransaction,
-    setAllowed,
-} from "@stellar/freighter-api";
-import { Horizon, TransactionBuilder, Networks, Asset, Operation } from "stellar-sdk";
-
-
-const server = new Horizon.Server("https://horizon-testnet.stellar.org");
+    allowAllModules,
+    FREIGHTER_ID,
+} from "@creit.tech/stellar-wallets-kit";
+import { TransactionBuilder, Networks, Asset, Operation } from "stellar-sdk";
+import { kit, server } from "../utils/stellar";
 
 interface TxHistory {
     id: string;
@@ -33,34 +29,27 @@ export default function WalletConnect() {
 
 
     const handleConnect = async () => {
-        const installed = await isConnected();
-        if (!installed) {
-            alert("Please install Freighter Wallet!");
-            return;
-        }
-
         try {
-            const allowed = await setAllowed();
-            if (allowed) {
-                const response = await requestAccess();
-                if (response.error) {
-                    console.error(response.error);
-                    return;
-                }
-                setWalletAddress(response.address);
-                fetchBalance(response.address);
-                fetchTransactions(response.address);
-            }
-        } catch (e) {
-            console.error(e);
+            await kit.openModal({
+                onWalletSelected: async (option) => {
+                    kit.setWallet(option.id);
+                    const { address } = await kit.getAddress();
+                    setWalletAddress(address);
+                    fetchBalance(address);
+                    fetchTransactions(address);
+                },
+            });
+        } catch (error) {
+            console.error("Connection failed:", error);
         }
     };
 
     const handleDisconnect = () => {
         setWalletAddress("");
         setBalance("0");
-        setTxStatus("");
+        setTransactions([]);
         setTxHash("");
+        setTxStatus("");
     };
 
 
@@ -70,11 +59,10 @@ export default function WalletConnect() {
             const xlmBalance = account.balances.find(
                 (b: any) => b.asset_type === "native"
             );
-            if (xlmBalance) {
-                setBalance(xlmBalance.balance);
-            }
+            setBalance(xlmBalance ? xlmBalance.balance : "0");
         } catch (error) {
-            console.error("Error fetching balance:", error);
+            console.error("Failed to fetch balance:", error);
+            setBalance("0");
         }
     };
 
@@ -84,15 +72,15 @@ export default function WalletConnect() {
             const history = resp.records.map((r: any) => ({
                 id: r.id,
                 type: r.type,
-                created_at: new Date(r.created_at).toLocaleDateString() + " " + new Date(r.created_at).toLocaleTimeString(),
+                created_at: new Date(r.created_at).toLocaleString(),
                 amount: r.amount,
                 asset_code: r.asset_type === "native" ? "XLM" : r.asset_code,
                 from: r.from,
-                to: r.to,
+                to: r.to
             }));
             setTransactions(history);
         } catch (error) {
-            console.error("Error fetching transactions:", error);
+            console.error("Failed to fetch transactions:", error);
         }
     };
 
@@ -112,20 +100,17 @@ export default function WalletConnect() {
                     Operation.payment({
                         destination: destination,
                         asset: Asset.native(),
-                        amount: amount,
+                        amount: amount.toString(),
                     })
                 )
                 .setTimeout(30)
                 .build();
-            const signedTxResponse = await signTransaction(tx.toXDR(), {
+
+            const { signedTxXdr } = await kit.signTransaction(tx.toXDR(), {
                 networkPassphrase: Networks.TESTNET,
             });
 
-            if (signedTxResponse.error) {
-                throw new Error(signedTxResponse.error);
-            }
-
-            const txFromXDR = TransactionBuilder.fromXDR(signedTxResponse.signedTxXdr, Networks.TESTNET);
+            const txFromXDR = TransactionBuilder.fromXDR(signedTxXdr, Networks.TESTNET);
 
             const txResult = await server.submitTransaction(txFromXDR);
 
@@ -134,8 +119,8 @@ export default function WalletConnect() {
             fetchBalance(walletAddress);
             fetchTransactions(walletAddress);
         } catch (error) {
-            console.error("Tx failed", error);
-            setTxStatus("Failed. Check console.");
+            console.error("Transaction failed:", error);
+            setTxStatus("Failed");
         }
     };
 
@@ -152,7 +137,7 @@ export default function WalletConnect() {
                         onClick={handleConnect}
                         className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-cyan-200 border border-cyan-500/20 px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium tracking-wide backdrop-blur-sm"
                     >
-                        Connect Freighter
+                        Connect Wallet
                     </button>
                 ) : (
                     <button
@@ -164,8 +149,10 @@ export default function WalletConnect() {
                 )}
             </div>
 
+            {/* Wallet Details */}
             {walletAddress && (
                 <div className="space-y-8">
+                    {/* Account Info Card */}
                     <div className="bg-white/5 border border-white/5 rounded-xl p-5 backdrop-blur-md">
                         <div className="mb-4">
                             <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">Account</p>
@@ -181,6 +168,7 @@ export default function WalletConnect() {
                         </div>
                     </div>
 
+                    {/* Transaction Form */}
                     <div className="space-y-4">
                         <div className="space-y-3">
                             <input
@@ -208,7 +196,7 @@ export default function WalletConnect() {
                         </button>
                     </div>
 
-
+                    {/* Feedback Area */}
 
                     {txStatus && (
                         <div className={`p-4 rounded-lg text-center text-sm ${txStatus === 'Success!' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-white/5 text-gray-300 border border-white/5'}`}>

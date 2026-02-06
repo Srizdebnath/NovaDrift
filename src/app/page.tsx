@@ -1,4 +1,5 @@
 import WalletConnect from "@/components/WalletConnect";
+import Crowdfunding from "@/components/Crowdfunding";
 
 export default function Home() {
   return (
@@ -15,8 +16,9 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="z-10 w-full flex justify-center">
+      <div className="z-10 w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 gap-8 items-start justify-center">
         <WalletConnect />
+        <Crowdfunding />
       </div>
     </main>
   );
